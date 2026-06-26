@@ -1,69 +1,74 @@
 # unitree_nav_bridge
 
-Puente de navegación entre **[Nav2](https://navigation.ros.org/)** y la **API de movimiento propietaria de Unitree** para el cuadrúpedo **Go2**.
+A ROS 2 bridge between standard velocity commands (`geometry_msgs/Twist` on `/cmd_vel`) and **Unitree's proprietary motion API** for the **Go2** quadruped.
 
-El SDK de Unitree expone la primitiva de bajo nivel `SportClient::Move(vx, vy, vyaw)`, pero **no** incluye la integración con el stack estándar de ROS 2 ni la lógica de seguridad necesaria para una navegación autónoma. Este paquete aporta esa capa intermedia: convierte los comandos de velocidad estándar (`geometry_msgs/Twist` en `/cmd_vel`) en peticiones de la API de Unitree, añadiendo *watchdog*, verificación de modo y saturación de velocidades.
+Unitree's SDK exposes the low-level primitive `SportClient::Move(vx, vy, vyaw)`, but it does **not** ship the glue to the standard ROS 2 stack nor the safety logic needed to drive the robot from `/cmd_vel`. This package provides that middle layer: it turns standard velocity commands into Unitree API requests, adding a *watchdog*, locomotion-mode checking and velocity saturation.
+
+> **Status:** The `/cmd_vel → Unitree` bridge is working (drive the Go2 from teleop or any `Twist` source).
+> Full **Nav2 autonomous navigation** integration (SLAM + EKF + planner) is **🚧 coming soon**.
 
 ---
 
 ## 🎥 Demo
 
-<!-- Sustituye el enlace por tu vídeo (puedes arrastrar un .mp4 a un issue/PR de GitHub y pegar la URL que se genera, o enlazar a YouTube). -->
+<!-- Replace the link with your own video (you can drag a .mp4 into a GitHub issue/PR and paste the generated URL, or link to YouTube). -->
 
-> _Vídeo del Go2 navegando de forma autónoma con Nav2 (próximamente)._
+> _Video of the Go2 driven through the bridge (coming soon)._
 
 <!--
-[![Demo de navegación](docs/thumbnail.png)](https://www.youtube.com/watch?v=TU_VIDEO_ID)
+[![Navigation demo](docs/thumbnail.png)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
 -->
 
 ---
 
-## Arquitectura
+## Architecture
 
 ```
-        ┌──────────────┐   /cmd_vel (Twist)   ┌─────────────────────┐   /api/sport/request   ┌────────────┐
-        │     Nav2     │ ───────────────────► │  unitree_nav_bridge │ ─────────────────────► │  Go2 (API) │
-        │ (controller) │                      │  (este paquete)     │     unitree_api/Req    │  SportMode │
-        └──────────────┘                      └─────────────────────┘                        └────────────┘
-               ▲                                        ▲                                            │
-               │ map → odom → base_footprint            │ lf/sportmodestate (modo actual)            │
-               │                                        └────────────────────────────────────────────┘
-        ┌──────┴───────┐      ┌──────────────┐      ┌──────────────────────────┐
-        │ slam_toolbox │◄─────│   robot_     │◄─────│  Go2: /utlidar/scan,     │
-        │   (mapping)  │      │ localization │      │  /utlidar/robot_odom     │
-        └──────────────┘      │    (EKF)     │      └──────────────────────────┘
-                              └──────────────┘
+                                /cmd_vel (Twist)        ┌─────────────────────┐   /api/sport/request   ┌────────────┐
+   teleop / any Twist source ─────────────────────────►│  unitree_nav_bridge │ ─────────────────────► │  Go2 (API) │
+                                                        │   (this package)    │     unitree_api/Req    │  SportMode │
+                                                        └─────────────────────┘                        └────────────┘
+                                                                  ▲                                          │
+                                                                  └──── lf/sportmodestate (current mode) ────┘
+
+   ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+   │   Coming soon — full Nav2 stack                                                             │
+   │                                                                                               │
+   │   Go2 LiDAR ──► pointcloud_to_laserscan ──► slam_toolbox ──► Nav2 ──► /cmd_vel ──► (bridge)    │
+   │   /utlidar/robot_odom ──► robot_localization (EKF) ──► odom → base_footprint TF               │
+   └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Flujo de datos:**
-1. El LiDAR del Go2 (`/utlidar/robot_odom`) alimenta un **EKF** (`robot_localization`) que publica la TF `odom → base_footprint`.
-2. **slam_toolbox** construye el mapa a partir de `/utlidar/scan` y publica `map → odom`.
-3. **Nav2** planifica y publica velocidades en `/cmd_vel`.
-4. **`unitree_nav_bridge`** traduce esas velocidades a la API de Unitree, con la lógica de seguridad descrita abajo.
+**Current data flow:**
+1. Any source publishes velocity commands on `/cmd_vel` (`geometry_msgs/Twist`).
+2. `unitree_nav_bridge` translates them into Unitree's motion API, applying the safety logic below.
+3. The robot's current locomotion mode (`lf/sportmodestate`) is monitored to decide whether it is safe to move.
+
+**Planned (coming soon):** the LiDAR-based SLAM + EKF + Nav2 stack that will autonomously generate `/cmd_vel`. Example configs for it are already included under `config/`.
 
 ---
 
-## Características
+## Features
 
-- **Traducción `/cmd_vel` → `SportClient::Move`** — conecta cualquier fuente de `Twist` (Nav2, teleop, etc.) con el Go2.
-- **Watchdog de seguridad** — si dejan de llegar comandos durante `cmd_timeout` segundos, el robot se detiene automáticamente.
-- **Verificación de modo de locomoción** — solo se envían comandos si el cuadrúpedo está en un modo seguro (de pie / caminando); evita forzar el hardware cuando los motores están en *damping*.
-- **Saturación de velocidades** — recorta `vx`, `vy`, `vyaw` a los límites físicos del robot.
-- **Loop de control a frecuencia fija** (50 Hz por defecto), desacoplado de la llegada de comandos mediante un *timer*.
-- **Totalmente parametrizable** vía YAML — tópicos, frecuencia, límites y modos válidos sin recompilar.
-- Ejecución con `MultiThreadedExecutor` para no serializar el loop de control tras un callback lento.
-
----
-
-## Dependencias
-
-- ROS 2 (probado en **Humble**)
-- [`unitree_ros2`](https://github.com/unitreerobotics/unitree_ros2) (provee `unitree_api` y `unitree_go`)
-- `nav2`, `slam_toolbox`, `robot_localization`, `pointcloud_to_laserscan` (para el stack de navegación completo)
+- **`/cmd_vel` → `SportClient::Move` translation** — connect any `Twist` source (teleop today, Nav2 next) to the Go2.
+- **Safety watchdog** — if no command arrives for `cmd_timeout` seconds, the robot stops automatically.
+- **Locomotion-mode check** — commands are only sent when the quadruped is in a safe mode (standing / walking); avoids stressing the hardware while the motors are in *damping*.
+- **Velocity saturation** — clamps `vx`, `vy`, `vyaw` to the robot's physical limits.
+- **Fixed-rate control loop** (50 Hz by default), decoupled from command arrival via a timer.
+- **Fully parameterizable** through YAML — topics, rate, limits and valid modes with no recompilation.
+- Runs on a `MultiThreadedExecutor` so the control loop is not serialized behind a slow callback.
 
 ---
 
-## Compilación
+## Dependencies
+
+- ROS 2 (tested on **Humble**)
+- [`unitree_ros2`](https://github.com/unitreerobotics/unitree_ros2) (provides `unitree_api` and `unitree_go`)
+- _Coming soon:_ `nav2`, `slam_toolbox`, `robot_localization`, `pointcloud_to_laserscan` for the full navigation stack.
+
+---
+
+## Build
 
 ```bash
 cd ~/ros2_ws
@@ -71,49 +76,55 @@ colcon build --packages-select unitree_nav_bridge
 source install/setup.bash
 ```
 
-## Uso
+## Usage
 
-Lanzar solo el puente (con los parámetros por defecto de `config/bridge_params.yaml`):
+Launch the bridge (with the defaults in `config/bridge_params.yaml`):
 
 ```bash
 ros2 launch unitree_nav_bridge bridge.launch.py
 ```
 
-Con un fichero de parámetros propio:
+With your own parameter file:
 
 ```bash
-ros2 launch unitree_nav_bridge bridge.launch.py params_file:=/ruta/a/mis_params.yaml
+ros2 launch unitree_nav_bridge bridge.launch.py params_file:=/path/to/my_params.yaml
+```
+
+Then drive the robot by publishing to `/cmd_vel`, e.g. with teleop:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
 ---
 
-## Configuración
+## Configuration
 
-Todos los valores operativos están en [`config/bridge_params.yaml`](config/bridge_params.yaml):
+All operational values live in [`config/bridge_params.yaml`](config/bridge_params.yaml):
 
-| Parámetro | Tipo | Por defecto | Descripción |
+| Parameter | Type | Default | Description |
 |---|---|---|---|
-| `cmd_vel_topic` | string | `/cmd_vel` | Tópico de entrada de velocidades (Nav2). |
-| `state_topic` | string | `lf/sportmodestate` | Tópico de estado/modo del robot. |
-| `control_frequency` | double | `50.0` | Frecuencia (Hz) de envío de `Move()`. |
-| `cmd_timeout` | double | `0.3` | Segundos sin `cmd_vel` antes de detener (watchdog). |
-| `valid_locomotion_modes` | int[] | `[0, 7, 9]` | Modos en los que es seguro mover el robot. |
-| `max_vx` / `min_vx` | double | `1.5` / `-1.0` | Límites de velocidad de avance (m/s). |
-| `max_vy` | double | `0.5` | Límite de desplazamiento lateral, simétrico (m/s). |
-| `max_vyaw` | double | `1.0` | Límite de velocidad de giro, simétrico (rad/s). |
+| `cmd_vel_topic` | string | `/cmd_vel` | Input velocity topic. |
+| `state_topic` | string | `lf/sportmodestate` | Robot state/mode topic. |
+| `control_frequency` | double | `50.0` | `Move()` send rate (Hz). |
+| `cmd_timeout` | double | `0.3` | Seconds without `cmd_vel` before stopping (watchdog). |
+| `valid_locomotion_modes` | int[] | `[0, 7, 9]` | Modes in which it is safe to move the robot. |
+| `max_vx` / `min_vx` | double | `1.5` / `-1.0` | Forward/backward velocity limits (m/s). |
+| `max_vy` | double | `0.5` | Lateral velocity limit, symmetric (m/s). |
+| `max_vyaw` | double | `1.0` | Yaw rate limit, symmetric (rad/s). |
 
-> ⚠️ **Nota sobre los modos:** los valores de `mode` en `SportModeState` (7 = de pie, 9 = caminando, 12 = damping…) pueden variar según la versión de firmware del robot. Verifica los tuyos antes de operar.
+>  **About the modes:** the `mode` values in `SportModeState` (7 = standing, 9 = walking, 12 = damping…) may vary across firmware versions. Verify yours before operating.
 
-En `config/` también se incluyen ejemplos de configuración del stack de navegación:
-- `ekf.yaml` — fusión de odometría con `robot_localization`.
-- `mapper.yaml` — mapeo con `slam_toolbox`.
-- `qos.yaml` — `pointcloud_to_laserscan` para generar `/utlidar/scan`.
+`config/` also ships example configs for the upcoming navigation stack:
+- `ekf.yaml` — odometry fusion with `robot_localization`.
+- `mapper.yaml` — mapping with `slam_toolbox`.
+- `qos.yaml` — `pointcloud_to_laserscan` to generate `/utlidar/scan`.
 
 ---
 
-## Tópicos
+## Topics
 
-| Dirección | Tópico | Tipo |
+| Direction | Topic | Type |
 |---|---|---|
 | Sub | `/cmd_vel` | `geometry_msgs/msg/Twist` |
 | Sub | `lf/sportmodestate` | `unitree_go/msg/SportModeState` |
@@ -121,21 +132,21 @@ En `config/` también se incluyen ejemplos de configuración del stack de navega
 
 ---
 
-## Estructura del paquete
+## Package layout
 
 ```
 unitree_nav_bridge/
 ├── src/
-│   ├── unitree_bridge.cpp        # nodo del puente (Nav2 -> Unitree)
-│   └── ros2_sport_client.cpp     # cliente de la API Sport de Unitree
+│   ├── unitree_bridge.cpp        # bridge node (cmd_vel -> Unitree)
+│   └── ros2_sport_client.cpp     # Unitree Sport API client
 ├── include/unitree_nav_bridge/
 │   ├── ros2_sport_client.h
 │   └── patch.hpp
 ├── config/
-│   ├── bridge_params.yaml        # parámetros del puente
-│   ├── ekf.yaml                  # robot_localization (EKF)
-│   ├── mapper.yaml               # slam_toolbox
-│   └── qos.yaml                  # pointcloud_to_laserscan
+│   ├── bridge_params.yaml        # bridge parameters
+│   ├── ekf.yaml                  # robot_localization (EKF)   [coming soon]
+│   ├── mapper.yaml               # slam_toolbox               [coming soon]
+│   └── qos.yaml                  # pointcloud_to_laserscan    [coming soon]
 ├── launch/
 │   └── bridge.launch.py
 ├── CMakeLists.txt
@@ -144,8 +155,19 @@ unitree_nav_bridge/
 
 ---
 
-## Licencia
+## Roadmap
+
+- [x] `/cmd_vel → Unitree` bridge with watchdog, mode check and velocity saturation
+- [x] YAML-based parameterization + launch file
+- [ ] LiDAR `pointcloud_to_laserscan` + `slam_toolbox` mapping
+- [ ] `robot_localization` (EKF) odometry fusion
+- [ ] Full Nav2 autonomous navigation
+- [ ] Demo video
+
+---
+
+## License
 
 [MIT](LICENSE)
 
-> `ros2_sport_client.{h,cpp}` y `patch.hpp` provienen de los ejemplos de Unitree Robotics y conservan su copyright original.
+> `ros2_sport_client.{h,cpp}` and `patch.hpp` come from the Unitree Robotics examples and keep their original copyright.
