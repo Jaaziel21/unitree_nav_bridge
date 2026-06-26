@@ -1,0 +1,21 @@
+nav_to_unitree_bridge:
+  ros__parameters:
+    # --- Tópicos ---
+    cmd_vel_topic: "/cmd_vel"          # entrada: velocidades de Nav2
+    state_topic: "lf/sportmodestate"   # estado/modo del cuadrúpedo
+
+    # --- Loop de control ---
+    control_frequency: 50.0            # Hz a los que se envía Move() al robot
+    cmd_timeout: 0.3                   # s sin cmd_vel antes de detener (watchdog)
+
+    # --- Seguridad ---
+    # Modos de SportModeState en los que es seguro mover el robot.
+    # 0 = desconocido/arranque, 7 = de pie, 9 = caminando.
+    # 12 suele ser Damping (motores apagados). Verifica con tu firmware.
+    valid_locomotion_modes: [0, 7, 9]
+
+    # --- Límites de velocidad (m/s y rad/s) ---
+    max_vx: 1.5      # avance máximo
+    min_vx: -1.0     # retroceso máximo
+    max_vy: 0.5      # desplazamiento lateral (simétrico)
+    max_vyaw: 1.0    # giro (simétrico)

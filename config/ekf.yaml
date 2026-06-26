@@ -1,0 +1,29 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    # Mantener en true para Nav2 estándar en 2D. 
+    # Cambiar a false en el futuro si necesitas estimación completa en 3D para terrenos irregulares.
+    two_d_mode: true 
+    
+    # ¡Esta es la clave! Obliga al nodo a publicar la flecha odom -> base_footprint
+    publish_tf: true 
+
+    # Configuración de los frames topológicos
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint  # Apuntamos al frame que creamos en tu XACRO
+    world_frame: odom                # El origen de este filtro será odom
+
+    # Configuración de tu fuente de odometría (El tópico del Unitree)
+    odom0: /utlidar/robot_odom
+    
+    # ¿Qué datos del tópico /utlidar/robot_odom confiamos?
+    # Orden: [X, Y, Z, Roll, Pitch, Yaw, Vx, Vy, Vz, Vroll, Vpitch, Vyaw, Ax, Ay, Az]
+    odom0_config: [true,  true,  false,
+                   false, false, true,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+                   
+    # Opcional: Si la odometría del LiDAR es muy ruidosa, puedes ajustar su covarianza
+    odom0_relative: true

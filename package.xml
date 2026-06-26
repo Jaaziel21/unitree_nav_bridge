@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>unitree_nav_bridge</name>
+  <version>0.1.0</version>
+  <description>
+    Puente entre Nav2 y la API de movimiento de Unitree (Go2): traduce
+    /cmd_vel (geometry_msgs/Twist) a la API SportClient::Move, con watchdog,
+    verificación de modo de locomoción y saturación de velocidades.
+  </description>
+  <maintainer email="leyberthc@gmail.com">jaaziel</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>unitree_api</depend>
+  <depend>unitree_go</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
