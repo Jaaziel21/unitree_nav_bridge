@@ -11,13 +11,7 @@ Unitree's SDK exposes the low-level primitive `SportClient::Move(vx, vy, vyaw)`,
 
 ## 🎥 Demo
 
-<!-- Replace the link with your own video (you can drag a .mp4 into a GitHub issue/PR and paste the generated URL, or link to YouTube). -->
-
-> _Video of the Go2 driven through the bridge (coming soon)._
-
-<!--
-[![Navigation demo](docs/thumbnail.png)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
--->
+https://github.com/user-attachments/assets/acf24a38-5336-4679-bbe4-97f8372b6731
 
 ---
 
